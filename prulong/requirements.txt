@@ -1,6 +1,6 @@
 accelerate==0.32.1
 datasets==2.20.0
-mosaicml==0.16.4
+# mosaicml==0.16.4
 mosaicml-cli==0.5.34
 mosaicml-streaming==0.8.1
 numpy==1.26.3
@@ -15,6 +15,6 @@ wandb==0.17.3
 zstandard==0.22.0
 zstd==1.5.5.1
 huggingface-hub==0.23.4
-block-sparse-attn==0.0.1
+# block-sparse-attn==0.0.1
 
 # flash-attn==2.6.1 --config-settings=--global-option="--no-build-isolation" 

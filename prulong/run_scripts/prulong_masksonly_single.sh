@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=prulong_masksonly
+#SBATCH --job-name=prulong_masksonly_single
 #SBATCH --partition=gpu
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --output=./joblog/%x-%A_%a.out
 #SBATCH --cpus-per-task=64
 #SBATCH --gres=gpu:8
@@ -22,7 +22,7 @@ warmup=${WARMUP:-0.1}
 suffix=${SUFFIX:-""}
 overrides=${OVERRIDES:-""}
 min_lr_ratio=${MIN_LR_RATIO:-0.01}
-seq_parallel_size=${SEQ_PARALLEL_SIZE:-1}  # 改为1，避免序列并行冲突
+seq_parallel_size=${SEQ_PARALLEL_SIZE:-1}  # 单节点，使用1
 
 # FSDP configuration
 # 0=Disable, 1=FULL_SHARD, 2=SHARD_GRAD_OP, 3=NO_SHARD, 4=HYBRID_SHARD, 5=HYBRID_SHARD_ZERO2
@@ -71,13 +71,13 @@ if [[ $freeze_masks == "true" ]]; then
     extra_name="${extra_name}_mfrozen"
 fi
 
-run_name="masksonly_$(basename $model)_bsz${bsz}_steps${steps}_lr${lr}_warmup${warmup}_sp${end_head_sparsity}_cw${context_window_if_toggled}_mlr${mask_learning_rate}_rlr${reg_learning_rate}${extra_name}${suffix}"
+run_name="masksonly_single_$(basename $model)_bsz${bsz}_steps${steps}_lr${lr}_warmup${warmup}_sp${end_head_sparsity}_cw${context_window_if_toggled}_mlr${mask_learning_rate}_rlr${reg_learning_rate}${extra_name}${suffix}"
 
 out_dir="checkpoints/$run_name"
 mkdir -p $out_dir
 nvidia-smi
 
-# Calculate GPU and node configuration
+# Calculate GPU configuration (single node)
 if [ -z "$CUDA_VISIBLE_DEVICES" ]; then
     num_gpus=$(nvidia-smi -L | wc -l)
 else
@@ -85,37 +85,20 @@ else
 fi
 num_gpus=${NUM_GPUS:-$num_gpus}
 
-num_nodes=$(scontrol show hostnames "$SLURM_JOB_NODELIST" 2>/dev/null | wc -l)
-if [ $num_nodes == 0 ]; then
-    num_nodes=1
-fi
-num_nodes=${NUM_NODES:-$num_nodes}
+# Single node setup
+num_nodes=1
+master_port=$(comm -23 <(seq 49152 65535 | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1)
 
-# Setup distributed training
-if [ $num_nodes -gt 1 ]; then
-    master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
-    master_addr=${MASTER_ADDR:-$master_addr}
-
-    header="srun torchrun \
-    --rdzv-backend=c10d \
-    --rdzv-endpoint=$master_addr:56321 \
-    --nnodes=$num_nodes \
-    --nproc-per-node=$num_gpus \
-    -m training.lh_train_language_model"
-else
-    master_port=$(comm -23 <(seq 49152 65535 | sort) <(ss -Htan | awk '{print $4}' | cut -d':' -f2 | sort -u) | shuf | head -n 1)
-
-    header="torchrun \
-    --rdzv-backend=c10d \
-    --rdzv-endpoint=localhost:$master_port \
-    --nnodes=1 \
-    --nproc-per-node=$num_gpus \
-    -m training.lh_train_language_model"
-fi
+header="torchrun \
+--rdzv-backend=c10d \
+--rdzv-endpoint=localhost:$master_port \
+--nnodes=1 \
+--nproc-per-node=$num_gpus \
+-m training.lh_train_language_model"
 
 accu=$(($bsz / $seq / $num_gpus / $num_nodes))
 
-echo "num_nodes=${num_nodes} master_addr=${master_addr} master_port=${master_port} num_gpus=${num_gpus}"
+echo "num_nodes=${num_nodes} master_port=${master_port} num_gpus=${num_gpus}"
 
 # Environment variables
 export OMP_NUM_THREADS=$num_gpus
@@ -181,9 +164,14 @@ base_arguments=(
     --should_log_loss true
     --save_total_limit 3
 
-    --tokenized_mds_train $dataset
+    --tokenized_mds_train
+)
+for domain in "${domains[@]}"; do
+    base_arguments+=( $dataset/$domain )
+done
 
-    # Streaming configuration
+# Streaming configuration
+base_arguments+=(
     --toggle_type $toggle_type
     --sink_size $sink_size
 )
