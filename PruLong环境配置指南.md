@@ -58,8 +58,8 @@ cd ../prulong  # 回到PruLong/prulong目录
 
 ```bash
 # 训练PruLong模型（仅训练掩码，适合已调优的模型）
-# 这个是我改过的脚本，单卡训练，只需要把模型路径换成自己的
-bash run_scripts/prulong_masksonly_single.sh
+# 这个是我改过的脚本，针对A100 8卡训练可行，只需要把模型路径换成自己的
+bash run_scripts/prulong_masksonly.sh
 
 ```
 
@@ -81,12 +81,12 @@ export STEPS=500                                   # 训练步数（快速测试
 export LR=1e-5                                     # 学习率
 
 # 运行训练
-bash run_scripts/prulong_masksonly_single.sh
+bash run_scripts/prulong_masksonly.sh
 ```
 
 ### 选择训练模式
 
-不确定下面这几个脚本跑得通
+不确定下面2 3这两个个脚本跑得通
 
 ```bash
 # 模式1：仅训练掩码（推荐，适合指令模型）
